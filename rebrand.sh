@@ -68,6 +68,9 @@ VISIBLE=$( { grep -rlI "${MATCH[@]}" packaging 2>/dev/null || true; grep -rlI "$
 CODE=$(grep -rlI "${MATCH[@]}" crates apps --include='*.rs' 2>/dev/null | grep -v -e '/tests/' -e 'tests\.rs$' -e '_tests\.rs$' || true)
 [ -n "$CODE" ] && printf '%s\n' "$CODE" | tr '\n' '\0' | KOJA_CODE=1 xargs -0 perl -pi "$BRAND/visible_rename.pl"
 echo "$(printf '%s\n' "$VISIBLE" | grep -c .) installer/translation files, $(printf '%s\n' "$CODE" | grep -c .) code files (string literals only)"
+# Koja apps have no Discord: strip ArtCraft's Discord buttons, menu entries and links from the code.
+DC=$(grep -rliI discord crates apps --include='*.rs' 2>/dev/null | grep -vE '/tests?(/|\.rs$)|tests_|_tests?\.rs$|/i18n|icons\.rs$' || true)
+[ -n "$DC" ] && printf '%s\n' "$DC" | tr '\n' '\0' | xargs -0 perl -0777 -pi "$BRAND/strip_discord.pl"
 # The attribution the license requires names the original, in every language: undo the rename there.
 git ls-files crates apps | grep -E '/i18n/|/locales?/|\.rs$' | tr '\n' '\0' | xargs -0 perl -pi -e 's/Based on (\w+)Koja by the Kojalytics team/Based on $1Craft by the ArtCraft team/g; s/Basiert auf (\w+)Koja vom Kojalytics-Team/Basiert auf $1Craft vom ArtCraft-Team/g'
 # Shared libraries stay on ArtCraft's repos (MIT/Apache, fetched as dependencies).
