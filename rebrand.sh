@@ -73,6 +73,19 @@ DC=$(grep -rliI discord crates apps --include='*.rs' 2>/dev/null | grep -vE '/te
 [ -n "$DC" ] && printf '%s\n' "$DC" | tr '\n' '\0' | xargs -0 perl -0777 -pi "$BRAND/strip_discord.pl"
 # The attribution the license requires names the original, in every language: undo the rename there.
 git ls-files crates apps | grep -E '/i18n/|/locales?/|\.rs$' | tr '\n' '\0' | xargs -0 perl -pi -e 's/Based on (\w+)Koja by the Kojalytics team/Based on $1Craft by the ArtCraft team/g; s/Basiert auf (\w+)Koja vom Kojalytics-Team/Basiert auf $1Craft vom ArtCraft-Team/g'
+# Kojalytics' own About lines aren't in ArtCraft's catalogs: add them (German translated, other
+# languages in English) so every language still covers every interface text.
+KEYS=$(grep -rhoE '"[^"]*(published by Kojalytics|Modifications \(c\) [0-9]+ Kojalytics)[^"]*"' crates apps --include='*.rs' 2>/dev/null | sort -u | sed 's/^"//; s/"$//' || true)
+if [ -n "$KEYS" ]; then
+  for cat in $(git ls-files 'crates/*/i18n/*.tsv' 'apps/*/i18n/*.tsv'); do
+    printf '%s\n' "$KEYS" | while IFS= read -r k; do
+      grep -qF "	$k	" "$cat" && continue
+      v="$k"
+      case "$(basename "$cat")" in de.tsv) v=$(printf '%s' "$k" | perl -pe 's/^An open-source .+? written in Rust, published by Kojalytics\./Open-Source-Software, in Rust geschrieben, herausgegeben von Kojalytics./; s/Based on (\w+) by the ArtCraft team\./Basiert auf $1 vom ArtCraft-Team./; s/^Modifications \(c\) (\d+) Kojalytics\./Änderungen (c) $1 Kojalytics./') ;; esac
+      printf '\t%s\t%s\n' "$k" "$v" >>"$cat"
+    done
+  done
+fi
 # Shared libraries stay on ArtCraft's repos (MIT/Apache, fetched as dependencies).
 find . -name Cargo.toml -not -path "./target/*" -print0 | xargs -0 perl -pi -e 's{git = "https://github\.com/Kojalytics/}{git = "https://github.com/storytold/}g'
 find . -path ./target -prune -o -path ./.git -prune -o -name '*ai.storyteller.*' -print | while read -r f; do

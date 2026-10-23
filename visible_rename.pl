@@ -12,11 +12,12 @@ sub rb {
     $s =~ s/getartcraft\.com/kojalytics.com/g;
     $s =~ s{https://discord\.gg/artcraft}{$ENV{KOJALYTICS_DISCORD}}g if $ENV{KOJALYTICS_DISCORD};
     $s =~ s/storytold(?!\/craft-fonts)/Kojalytics/g;   # craft-fonts stays ArtCraft's (open fonts, build input)
-    $s =~ s/ArtCraft/Kojalytics/g;
+    # "the ArtCraft team" is the attribution the license requires: it keeps its name.
+    $s =~ s/ArtCraft(?! [Tt]eam)/Kojalytics/g;
     $s =~ s/Craft App Suite/Koja App Suite/g;
     $s =~ s/\b(Photo|Vector|Film|Light|Pdf|Effect|Design|Word|Deck|Grid|CAD|Sound|Fig)Craft(?=\b|[a-zäöüõ])/$1Koja/g;
     # The license requires naming the original: "Based on WordCraft by the ArtCraft team".
-    $s =~ s/Based on (\w+)Koja by the Kojalytics team/Based on $1Craft by the ArtCraft team/g;
+    $s =~ s/Based on (\w+)Koja by the (?:Kojalytics|ArtCraft) team/Based on $1Craft by the ArtCraft team/g;
     return $s;
 }
 

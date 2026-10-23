@@ -39,6 +39,10 @@ if ! git merge -q --no-edit -X theirs "$LATEST"; then
   [ -z "$(git diff --name-only --diff-filter=U)" ] && git commit -q --no-edit \
     || { echo "BLOCKED: merge of $LATEST has conflicts the script can't settle" >&2; git diff --name-only --diff-filter=U >&2; git merge --abort; exit 1; }
 fi
+# Translation catalogs are data: take ArtCraft's as they are (all languages stay in step); rebrand.sh
+# renames them the same way it renames the code, so keys and code strings match again.
+CATALOGS=$(git ls-tree -r --name-only "$LATEST" -- crates apps | grep -E '/(i18n|locales?)/[^/]+\.(tsv|ftl|po|json|toml)$' || true)
+[ -n "$CATALOGS" ] && printf '%s\n' "$CATALOGS" | tr '\n' '\0' | xargs -0 git checkout "$LATEST" --
 # Only Kojalytics' own workflows run in these repos: drop any ArtCraft added or brought back.
 for w in $(git ls-files .github/workflows); do
   case "$(basename "$w")" in koja-sync.yml | kojalytics-release.yml) ;; *) git rm -q -- "$w" ;; esac

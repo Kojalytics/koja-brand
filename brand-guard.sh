@@ -13,7 +13,7 @@ bad() { printf '  ✗ %s\n' "$*"; FAIL=1; }
 
 # Visible text: string literals in Rust code (not tests), installer files, translation catalogs.
 PATTERN='ArtCraft|getartcraft|storytold|ai\.storyteller|\b(Photo|Vector|Film|Light|Pdf|Effect|Design|Word|Deck|Grid|CAD|Sound|Fig)Craft\b|Craft App Suite|[Dd]iscord|DJ6XS33FX8'
-ALLOW='Copyright|©|Based on|ArtCraft Team and|by the ArtCraft team|not affiliated with|git = "https://github.com/storytold'
+ALLOW='Copyright|©|Based on|ArtCraft Team and|by the ArtCraft team|from the ArtCraft team|the ArtCraft team|not affiliated with|git = "https://github.com/storytold'
 RS=$(git ls-files 'crates/*.rs' 'apps/*.rs' | grep -vE '(^|/)tests?(/|\.rs$)|_tests?\.rs$|/tests_[a-z0-9_]+\.rs$|/benches/|/examples/|^crates/mcp/|-cli/|/i18n(\.rs|/)')
 HITS=$(printf '%s\n' "$RS" | tr '\n' '\0' | P="$PATTERN" A="$ALLOW" xargs -0 perl -ne '
   next if /^\s*\/\//;                       # comments
