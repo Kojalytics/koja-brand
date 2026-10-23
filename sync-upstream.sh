@@ -29,7 +29,20 @@ echo "==> $NEW $OURS → $OLD $LATEST"
 
 [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "error: $ID has uncommitted changes" >&2; exit 1; }
 git switch -q -C koja-sync
-git merge -q --no-edit -X theirs "$LATEST" || { echo "BLOCKED: merge of $LATEST failed" >&2; git merge --abort; exit 1; }
+if ! git merge -q --no-edit -X theirs "$LATEST"; then
+  # What -X theirs can't settle: a file one side deleted. ArtCraft's GitHub workflows stay deleted;
+  # anything else takes ArtCraft's side (kept if they kept it, gone if they removed it).
+  git diff --name-only --diff-filter=U -z | while IFS= read -r -d '' f; do
+    if [[ "$f" == .github/workflows/* ]] || [ ! -e "$f" ]; then git rm -q --cached --ignore-unmatch -- "$f"; rm -f -- "$f"
+    else git add -- "$f"; fi
+  done
+  [ -z "$(git diff --name-only --diff-filter=U)" ] && git commit -q --no-edit \
+    || { echo "BLOCKED: merge of $LATEST has conflicts the script can't settle" >&2; git diff --name-only --diff-filter=U >&2; git merge --abort; exit 1; }
+fi
+# Only Kojalytics' own workflows run in these repos: drop any ArtCraft added or brought back.
+for w in $(git ls-files .github/workflows); do
+  case "$(basename "$w")" in koja-sync.yml | kojalytics-release.yml) ;; *) git rm -q -- "$w" ;; esac
+done
 
 bash "$BRAND/rebrand.sh" "$ID" "$NEW" >"$APPS/$ID-rebrand.log" 2>&1 || { echo "BLOCKED: rebrand.sh failed (see $ID-rebrand.log)" >&2; exit 1; }
 bash "$BRAND/brand-guard.sh" . "$ID" || { echo "BLOCKED: branding guard failed: fix and run again" >&2; exit 1; }
