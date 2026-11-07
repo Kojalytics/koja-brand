@@ -89,7 +89,9 @@ fi
 # Shared libraries stay on ArtCraft's repos (MIT/Apache, fetched as dependencies).
 find . -name Cargo.toml -not -path "./target/*" -print0 | xargs -0 perl -pi -e 's{git = "https://github\.com/Kojalytics/}{git = "https://github.com/storytold/}g'
 find . -path ./target -prune -o -path ./.git -prune -o -name '*ai.storyteller.*' -print | while read -r f; do
-  git mv "$f" "${f/ai.storyteller./com.kojalytics.}"
+  d="${f/ai.storyteller./com.kojalytics.}"
+  # An update can bring the old name back next to ours: ours stays (icons are redrawn anyway).
+  if [ -e "$d" ]; then git rm -q -f -- "$f" 2>/dev/null || rm -f -- "$f"; else git mv "$f" "$d"; fi
 done
 
 step "license check"
@@ -97,7 +99,9 @@ MAIN="apps/$ID/src/main.rs"
 cp "$BRAND/koja_license.rs" "apps/$ID/src/license.rs"
 grep -q '^mod license;' "$MAIN" || perl -0pi -e 's/^use /mod license;\n\nuse /m' "$MAIN"
 grep -q 'license::gate(ui)' "$MAIN" || perl -0pi -e 's#(fn ui\(&mut self, ui: &mut egui::Ui, _?frame: &mut eframe::Frame\) \{\n)(\s*)self\.0\.ui\(ui\);#$1$2// Without an activated Kojalytics license the window shows the lock screen instead.\n$2if license::gate(ui) {\n$2    self.0.ui(ui);\n$2}#' "$MAIN"
-GATED=$(grep -c 'license::gate(ui)' "$MAIN" || true)
+# An update can move or rewrite the window code: gate_window.sh finds `fn ui` wherever it is now.
+if ! git grep -q 'license::gate(' -- "apps/$ID/src" crates/ui-egui/src 2>/dev/null; then bash "$BRAND/gate_window.sh" "$ID"; fi
+GATED=$(git grep -l 'license::gate(' -- "apps/$ID/src" crates/ui-egui/src 2>/dev/null | wc -l | tr -d ' ')
 TOML="apps/$ID/Cargo.toml"
 grep -q '^ed25519-dalek' "$TOML" || perl -0pi -e 's{^\[dependencies\]\n}{[dependencies]\nbase64 = "0.22"\ned25519-dalek = { version = "2", default-features = false, features = ["std"] }\nsha2 = "0.11"\n}m' "$TOML"
 echo "license.rs added, window gated: $GATED"
@@ -138,6 +142,10 @@ if [ -f "$PKG" ] && ! grep -q NOTARY_PROFILE "$PKG"; then
   ' "$PKG"
   bash -n "$PKG" && echo "package.sh: notarization via NOTARY_PROFILE ($(grep -c 'notarytool wait' "$PKG") wait loop)"
 fi
+
+step "app-specific fixes"
+# brand/patches/<id>.sh: fixes one app needs that the general rules don't cover (run in the repo).
+if [ -f "$BRAND/patches/$ID.sh" ]; then bash "$BRAND/patches/$ID.sh" && echo "patches/$ID.sh applied"; else echo "none"; fi
 
 step "report: check these by hand"
 echo "-- bundled assets whose license is not MIT/Apache/OFL/CC0/public domain (check before selling):"

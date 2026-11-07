@@ -32,17 +32,20 @@ git switch -q -C koja-sync
 if ! git merge -q --no-edit -X theirs "$LATEST"; then
   # What -X theirs can't settle: a file one side deleted. ArtCraft's GitHub workflows stay deleted;
   # anything else takes ArtCraft's side (kept if they kept it, gone if they removed it).
-  git diff --name-only --diff-filter=U -z | while IFS= read -r -d '' f; do
+  # The list is read first: a `git diff` still running beside `git add` would hold index.lock.
+  CONFLICTS=$(git diff --name-only --diff-filter=U)
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
     if [[ "$f" == .github/workflows/* ]] || [ ! -e "$f" ]; then git rm -q --cached --ignore-unmatch -- "$f"; rm -f -- "$f"
     else git add -- "$f"; fi
-  done
+  done <<<"$CONFLICTS"
   [ -z "$(git diff --name-only --diff-filter=U)" ] && git commit -q --no-edit \
     || { echo "BLOCKED: merge of $LATEST has conflicts the script can't settle" >&2; git diff --name-only --diff-filter=U >&2; git merge --abort; exit 1; }
 fi
 # Translation catalogs are data: take ArtCraft's as they are (all languages stay in step); rebrand.sh
 # renames them the same way it renames the code, so keys and code strings match again.
 CATALOGS=$(git ls-tree -r --name-only "$LATEST" -- crates apps | grep -E '/(i18n|locales?)/[^/]+\.(tsv|ftl|po|json|toml)$' || true)
-[ -n "$CATALOGS" ] && printf '%s\n' "$CATALOGS" | tr '\n' '\0' | xargs -0 git checkout "$LATEST" --
+if [ -n "$CATALOGS" ]; then printf '%s\n' "$CATALOGS" | tr '\n' '\0' | xargs -0 git checkout "$LATEST" --; fi
 # Only Kojalytics' own workflows run in these repos: drop any ArtCraft added or brought back.
 for w in $(git ls-files .github/workflows); do
   case "$(basename "$w")" in koja-sync.yml | kojalytics-release.yml) ;; *) git rm -q -- "$w" ;; esac
@@ -50,6 +53,8 @@ done
 
 bash "$BRAND/rebrand.sh" "$ID" "$NEW" >"$APPS/$ID-rebrand.log" 2>&1 || { echo "BLOCKED: rebrand.sh failed (see $ID-rebrand.log)" >&2; exit 1; }
 bash "$BRAND/brand-guard.sh" . "$ID" || { echo "BLOCKED: branding guard failed: fix and run again" >&2; exit 1; }
+# KOJA_DRY=1: stop here (merge, rebrand and guard only), to check an app quickly before the tests.
+if [ -n "${KOJA_DRY:-}" ]; then echo "DRY: $NEW ${LATEST#v} merged, rebranded, guard clean"; exit 0; fi
 
 # Tests: a failure blocks only when ArtCraft's own release passes that test (their bugs aren't ours).
 failed() { grep -E '^[^ ]+ --- FAILED$' "$1" | sed 's/ --- FAILED$//' | sort -u; }
