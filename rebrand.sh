@@ -132,6 +132,7 @@ if [ -d "$DMG" ]; then
   python3 "$BRAND/build_dmg_background.py" "$BRAND/fonts/Inter-Variable.ttf" "$DMG/background.svg" "${ICON_ARGS[@]}"
   [ -f "$DMG/generate.py" ] && python3 "$DMG/generate.py" >/dev/null && echo "background.tiff and layout regenerated"
 fi
+[ -f packaging/macos/package.sh ] && perl -0777 -pi "$BRAND/staple_retry.pl" packaging/macos/package.sh
 PKG=packaging/macos/package.sh
 if [ -f "$PKG" ] && ! grep -q NOTARY_PROFILE "$PKG"; then
   perl -0pi -e '
