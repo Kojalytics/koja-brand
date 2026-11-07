@@ -7,6 +7,7 @@
 set -uo pipefail
 REPO="${1:?usage: brand-guard.sh <repo-dir> <app-id>}"
 ID="${2:?usage: brand-guard.sh <repo-dir> <app-id>}"
+HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO" || exit 2
 FAIL=0
 bad() { printf '  ✗ %s\n' "$*"; FAIL=1; }
@@ -49,6 +50,12 @@ if [ "$ID" != craft-launcher ]; then
   git grep -q 'kojalytics-device:' -- "apps/$ID/src" 'crates/ui-egui/src' 2>/dev/null || bad "Kojalytics license module missing"
 else
   grep -q 'TEAM_ID: &str = "SF4KRG2343"' crates/native/src/install.rs || bad "launcher does not trust team SF4KRG2343"
+fi
+
+# The Kojalytics app icon (when brand/icons has one for this app).
+ICON="$HERE/icons/$ID.svg"
+if [ -f "$ICON" ] && [ -f "assets/app-icon/$ID.svg" ] && ! cmp -s "$ICON" "assets/app-icon/$ID.svg"; then
+  bad "app icon is not the Kojalytics icon (run brand/icons/apply_icons.py)"
 fi
 
 # Bundle id and the NOTICE attribution.

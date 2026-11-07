@@ -114,6 +114,11 @@ else
   echo "NOTICE starts differently: edit it by hand (keep the ArtCraft copyright, add Kojalytics' changes)"
 fi
 
+step "Kojalytics app icons"
+# Our own icon in every format the app already ships (assets/app-icon/**), before the DMG
+# background is drawn from it.
+if [ -f "$BRAND/icons/$ID.svg" ]; then python3 "$BRAND/icons/apply_icons.py" . "$ID"; fi
+
 step "DMG background and notarization"
 DMG=packaging/macos/dmg
 if [ -d "$DMG" ]; then
