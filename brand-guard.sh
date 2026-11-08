@@ -25,10 +25,14 @@ HITS=$(printf '%s\n' "$RS" | tr '\n' '\0' | P="$PATTERN" A="$ALLOW" xargs -0 per
 # Catalogs also hold unused entries (a removed Discord button's label), so only names and links count
 # there; a label the code still uses shows up in the Rust check above.
 NAMES='ArtCraft|getartcraft|storytold|ai\.storyteller|\b(Photo|Vector|Film|Light|Pdf|Effect|Design|Word|Deck|Grid|CAD|Sound|Fig)Craft\b|Craft App Suite'
-OTHER=$(git ls-files packaging 'crates/*' 'apps/*' | grep -E '^packaging/macos/|/i18n/|/locales?/' \
+OTHER=$(git ls-files packaging 'crates/*' 'apps/*' | grep -E '^packaging/(macos|windows)/|/i18n/|/locales?/' \
   | grep -vE '\.(rs|png|tiff|icns|ico|ttf|otf|md)$|LICENSE|\.attribution$' \
   | tr '\n' '\0' | xargs -0 grep -nIE "$NAMES" 2>/dev/null | grep -vE "$ALLOW" | grep -vE '^[^:]+:[0-9]+:\s*(#|//)')
 [ -z "$HITS$OTHER" ] || { bad "visible ArtCraft/Craft/Discord text:"; printf '%s\n' "$HITS" "$OTHER" | grep . | cut -c1-200 | head -40 | sed 's/^/      /'; }
+
+# Windows: the installer and the exe name Kojalytics as publisher, not ArtCraft's company.
+LM=$(git grep -n 'Learning Machines' -- packaging/windows 'apps/*/build.rs' 'crates/*/build.rs' 2>/dev/null)
+[ -z "$LM" ] || { bad "Windows publisher still ArtCraft's company (run brand/windows_brand.py):"; printf '%s\n' "$LM" | cut -c1-200 | head -5 | sed 's/^/      /'; }
 
 # The attribution must name the original, not claim Kojalytics wrote it.
 CLAIM=$( { printf '%s\n' "$RS" | tr '\n' '\0' | xargs -0 grep -nE 'Based on [A-Za-z]+Koja|by the Kojalytics [Tt]eam' 2>/dev/null

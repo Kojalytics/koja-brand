@@ -104,7 +104,12 @@ if ! git grep -q 'license::gate(' -- "apps/$ID/src" crates/ui-egui/src 2>/dev/nu
 GATED=$(git grep -l 'license::gate(' -- "apps/$ID/src" crates/ui-egui/src 2>/dev/null | wc -l | tr -d ' ')
 TOML="apps/$ID/Cargo.toml"
 grep -q '^ed25519-dalek' "$TOML" || perl -0pi -e 's{^\[dependencies\]\n}{[dependencies]\nbase64 = "0.22"\ned25519-dalek = { version = "2", default-features = false, features = ["std"] }\nsha2 = "0.11"\n}m' "$TOML"
+# Apps whose window lives in the UI library keep the module there (gate_window.sh): keep it current.
+[ -f crates/ui-egui/src/license.rs ] && grep -q 'kojalytics-device:' crates/ui-egui/src/license.rs && cp "$BRAND/koja_license.rs" crates/ui-egui/src/license.rs
 echo "license.rs added, window gated: $GATED"
+
+step "Windows installer: Kojalytics as publisher, own installer ids"
+python3 "$BRAND/windows_brand.py" .
 
 step "NOTICE"
 if head -1 NOTICE | grep -q "^$OLD\$"; then
