@@ -6,6 +6,8 @@
 - Publisher: ArtCraft's company "Learning Machines LLC" becomes "Kojalytics" in packaging/windows
   (MSI Manufacturer, registry keys) and in the exe's VERSIONINFO (build.rs CompanyName, added
   where the app sets none).
+- Windows Settings: the shared installer UI's own entry is registered as Kojalytics.<id> with the
+  plain app name (ArtCraft's says "(Craft Apps)" under Craft.<id>).
 - Installer identity: every random (version 4) GUID in packaging/windows/*.wxs|*.wxi (UpgradeCode,
   Upgrade Id, Component Guid) becomes a version 5 GUID derived from it. The Koja MSI is then its
   own product: ArtCraft's app of the same kind can't upgrade it, block it or share components.
@@ -42,6 +44,12 @@ def main() -> None:
         except UnicodeDecodeError:
             continue
         new = text.replace("Learning Machines LLC", "Kojalytics")
+        # The shared installer UI (installer-ui.wxs) adds its own Windows Settings entry: under a
+        # Kojalytics key (ArtCraft's app of the same kind uses Craft.<id>) and with the plain app name.
+        new = new.replace("CurrentVersion\\Uninstall\\Craft.", "CurrentVersion\\Uninstall\\Kojalytics.")
+        new = new.replace('Value="[ProductName] (Craft Apps)"', 'Value="[ProductName]"')
+        new = new.replace("<!-- Legacy Launchers match the canonical MSI name exactly; keep this alias distinct. -->",
+                          "<!-- The Kojalytics Launcher reads only MSI product-code entries, so this one keeps the plain name. -->")
         if path.name == "build.rs" and '.set("ProductName"' in new and "CompanyName" not in new:
             new = COMPANY.sub(lambda m: f'{m.group(1)}{m.group(3)}.set("CompanyName", "Kojalytics")\n{m.group(2)}', new, count=1)
         if path.suffix in (".wxs", ".wxi"):
