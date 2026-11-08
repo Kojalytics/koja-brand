@@ -88,6 +88,8 @@ if [ -n "$KEYS" ]; then
 fi
 # Shared libraries stay on ArtCraft's repos (MIT/Apache, fetched as dependencies).
 find . -name Cargo.toml -not -path "./target/*" -print0 | xargs -0 perl -pi -e 's{git = "https://github\.com/Kojalytics/}{git = "https://github.com/storytold/}g'
+# So do the fonts the packaging scripts download (there is no Kojalytics/craft-fonts).
+grep -rlI "github.com/Kojalytics/craft-fonts" packaging 2>/dev/null | tr '\n' '\0' | xargs -0 perl -pi -e 's{github\.com/Kojalytics/craft-fonts}{github.com/storytold/craft-fonts}g' 2>/dev/null || true
 find . -path ./target -prune -o -path ./.git -prune -o -name '*ai.storyteller.*' -print | while read -r f; do
   d="${f/ai.storyteller./com.kojalytics.}"
   # An update can bring the old name back next to ours: ours stays (icons are redrawn anyway).
