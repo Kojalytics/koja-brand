@@ -48,7 +48,7 @@ CATALOGS=$(git ls-tree -r --name-only "$LATEST" -- crates apps | grep -E '/(i18n
 if [ -n "$CATALOGS" ]; then printf '%s\n' "$CATALOGS" | tr '\n' '\0' | xargs -0 git checkout "$LATEST" --; fi
 # Only Kojalytics' own workflows run in these repos: drop any ArtCraft added or brought back.
 for w in $(git ls-files .github/workflows); do
-  case "$(basename "$w")" in koja-sync.yml | kojalytics-release.yml | kojalytics-windows.yml) ;; *) git rm -q -- "$w" ;; esac
+  case "$(basename "$w")" in koja-sync.yml | kojalytics-release.yml | kojalytics-windows.yml | kojalytics-publish.yml) ;; *) git rm -q -- "$w" ;; esac
 done
 
 bash "$BRAND/rebrand.sh" "$ID" "$NEW" >"$APPS/$ID-rebrand.log" 2>&1 || { echo "BLOCKED: rebrand.sh failed (see $ID-rebrand.log)" >&2; exit 1; }
