@@ -14,7 +14,7 @@ bad() { printf '  ✗ %s\n' "$*"; FAIL=1; }
 
 # Visible text: string literals in Rust code (not tests), installer files, translation catalogs.
 PATTERN='ArtCraft|getartcraft|storytold|ai\.storyteller|\b(Photo|Vector|Film|Light|Pdf|Effect|Design|Word|Deck|Grid|CAD|Sound|Fig)Craft\b|Craft App Suite|[Dd]iscord|DJ6XS33FX8'
-ALLOW='Copyright|©|Based on|ArtCraft Team and|by the ArtCraft team|from the ArtCraft team|the ArtCraft team|not affiliated with|git = "https://github.com/storytold'
+ALLOW='Copyright|©|Based on|ArtCraft Team and|by the ArtCraft team|from the ArtCraft team|the ArtCraft team|not affiliated with|git = "https://github.com/storytold|github\.com/storytold/craft-fonts'
 RS=$(git ls-files 'crates/*.rs' 'apps/*.rs' | grep -vE '(^|/)tests?(/|\.rs$)|_tests?\.rs$|/tests_[a-z0-9_]+\.rs$|/benches/|/examples/|^crates/mcp/|-cli/|/i18n(\.rs|/)')
 HITS=$(printf '%s\n' "$RS" | tr '\n' '\0' | P="$PATTERN" A="$ALLOW" xargs -0 perl -ne '
   next if /^\s*\/\//;                       # comments
@@ -24,11 +24,15 @@ HITS=$(printf '%s\n' "$RS" | tr '\n' '\0' | P="$PATTERN" A="$ALLOW" xargs -0 per
 } continue { if (eof) { close ARGV; $in_test = 0 }')
 # Catalogs also hold unused entries (a removed Discord button's label), so only names and links count
 # there; a label the code still uses shows up in the Rust check above.
-NAMES='ArtCraft|getartcraft|storytold|ai\.storyteller|\b(Photo|Vector|Film|Light|Pdf|Effect|Design|Word|Deck|Grid|CAD|Sound|Fig)Craft\b|Craft App Suite'
-OTHER=$(git ls-files packaging 'crates/*' 'apps/*' | grep -E '^packaging/macos/|/i18n/|/locales?/' \
+NAMES='ArtCraft|getartcraft|storytold|ai\.storyteller|\b(Photo|Vector|Film|Light|Pdf|Effect|Design|Word|Deck|Grid|CAD|Sound|Fig)Craft\b|Craft App Suite|Craft Apps\)'
+OTHER=$(git ls-files packaging 'crates/*' 'apps/*' | grep -E '^packaging/(macos|windows)/|/i18n/|/locales?/' \
   | grep -vE '\.(rs|png|tiff|icns|ico|ttf|otf|md)$|LICENSE|\.attribution$' \
   | tr '\n' '\0' | xargs -0 grep -nIE "$NAMES" 2>/dev/null | grep -vE "$ALLOW" | grep -vE '^[^:]+:[0-9]+:\s*(#|//)')
 [ -z "$HITS$OTHER" ] || { bad "visible ArtCraft/Craft/Discord text:"; printf '%s\n' "$HITS" "$OTHER" | grep . | cut -c1-200 | head -40 | sed 's/^/      /'; }
+
+# Windows: the installer and the exe name Kojalytics as publisher, not ArtCraft's company.
+LM=$(git grep -n 'Learning Machines' -- packaging/windows 'apps/*/build.rs' 'crates/*/build.rs' 2>/dev/null)
+[ -z "$LM" ] || { bad "Windows publisher still ArtCraft's company (run brand/windows_brand.py):"; printf '%s\n' "$LM" | cut -c1-200 | head -5 | sed 's/^/      /'; }
 
 # The attribution must name the original, not claim Kojalytics wrote it.
 CLAIM=$( { printf '%s\n' "$RS" | tr '\n' '\0' | xargs -0 grep -nE 'Based on [A-Za-z]+Koja|by the Kojalytics [Tt]eam' 2>/dev/null
