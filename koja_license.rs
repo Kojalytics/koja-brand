@@ -3,6 +3,10 @@
 //! signed by Kojalytics, for this machine; the app checks the signature and the machine offline.
 //! Until then it shows a lock screen instead, and checks again every few seconds.
 //!
+//! The certificate runs out (`expires`, 30 days after it was issued): the launcher renews it daily
+//! at kojalytics.com and deletes it once the key is deactivated. Certificates from before renewals
+//! have no end; they are accepted until [`LEGACY_UNTIL`], by when the launcher has renewed them.
+//!
 //! Shared verbatim by WordKoja, GridKoja and DeckKoja (`apps/<app>/src/license.rs`).
 
 use std::sync::{Mutex, OnceLock, PoisonError};
@@ -20,12 +24,17 @@ const PUBLIC_KEY: [u8; 32] = [
 ];
 const SHOP_URL: &str = "https://www.kojalytics.com/software#preise";
 const TRIAL_ENDED: &str = "Dein kostenloser 3-Tage-Test ist abgelaufen.";
+const RENEW: &str = "Die Lizenz auf diesem Computer muss erneuert werden.";
+/// 2027-03-01 00:00 UTC: until then a certificate without `expires` (from Kojalytics Launcher 0.4.5
+/// and older) still counts. Launcher 0.4.6 and later replace it at their next start.
+const LEGACY_UNTIL: u64 = 1_803_859_200;
 const LAUNCHER_BUNDLE_ID: &str = "com.kojalytics.artcraft-launcher";
 const RECHECK: Duration = Duration::from_secs(3);
 
 struct State {
     licensed: bool,
-    /// When a free trial ends (Unix seconds); `None` for a license.
+    /// When the free trial or the license certificate runs out (Unix seconds): then the app checks
+    /// again (the launcher may have renewed the certificate meanwhile).
     until: Option<u64>,
     reason: String,
     checked: Option<Instant>,
@@ -36,7 +45,7 @@ static STATE: Mutex<State> = Mutex::new(State { licensed: false, until: None, re
 /// `true` when the app may show its documents; otherwise draws the lock screen into `ui`.
 pub fn gate(ui: &mut egui::Ui) -> bool {
     let mut state = STATE.lock().unwrap_or_else(PoisonError::into_inner);
-    // A trial ends while the app is open, too.
+    // A trial or a certificate runs out while the app is open, too.
     if state.licensed && state.until.is_some_and(|until| unix_now() >= until) {
         state.licensed = false;
         state.checked = None;
@@ -73,7 +82,14 @@ fn lock_screen(ui: &mut egui::Ui, reason: &str) {
             ui.label(egui::RichText::new("🔒").size(40.0));
             ui.add_space(12.0);
             let ended = reason == TRIAL_ENDED;
-            let title = if ended { "Test abgelaufen" } else { "Lizenz erforderlich" };
+            let renew = reason == RENEW;
+            let title = if ended {
+                "Test abgelaufen"
+            } else if renew {
+                "Lizenz erneuern"
+            } else {
+                "Lizenz erforderlich"
+            };
             ui.label(egui::RichText::new(title).size(28.0).strong().color(egui::Color32::WHITE));
             ui.add_space(8.0);
             ui.label(egui::RichText::new(reason).color(egui::Color32::from_rgb(0xa5, 0xb4, 0xfc)));
@@ -81,6 +97,8 @@ fn lock_screen(ui: &mut egui::Ui, reason: &str) {
             ui.label(
                 egui::RichText::new(if ended {
                     "Kaufe eine Lizenz auf kojalytics.com und aktiviere sie im Kojalytics Launcher unter Einstellungen › Lizenz.\nDiese App entsperrt sich danach automatisch."
+                } else if renew {
+                    "Öffne den Kojalytics Launcher mit Internetverbindung (und installiere sein Update, falls er eins anbietet).\nEr erneuert die Lizenz, diese App entsperrt sich danach automatisch."
                 } else {
                     "Starte im Kojalytics Launcher unter Einstellungen › Lizenz den kostenlosen 3-Tage-Test\noder aktiviere deinen Lizenzschlüssel. Diese App entsperrt sich danach automatisch."
                 })
@@ -137,17 +155,23 @@ fn reg_value(key: &str, name: &str) -> Option<String> {
     (!value.is_empty()).then(|| value.to_string())
 }
 
-/// `Ok(None)` with a license, `Ok(Some(end))` during a free trial, otherwise why not.
+/// `Ok(Some(end))` while a license or a free trial lets the app open, otherwise why not.
 fn check() -> Result<Option<u64>, String> {
     let device = device_hash().ok_or("Die Geräte-ID dieses Computers ist nicht lesbar.")?;
     let path = certificate_path().ok_or("Der Ordner des Kojalytics Launchers wurde nicht gefunden.")?;
-    let license = std::fs::read_to_string(&path).ok().map(|cert| verify(&cert, &device, &PUBLIC_KEY));
-    if let Some(Ok(())) = license {
-        return Ok(None);
+    let now = unix_now();
+    let license = std::fs::read_to_string(&path).ok().map(|cert| verify(&cert, &device, &PUBLIC_KEY, now));
+    if let Some(Ok(until)) = license {
+        return Ok(Some(until));
     }
     // The launcher saves a free trial's certificate next to the license.
     if let Ok(cert) = std::fs::read_to_string(path.with_file_name("trial.txt")) {
-        return verify_trial(&cert, &device, &PUBLIC_KEY, unix_now()).map(Some);
+        match verify_trial(&cert, &device, &PUBLIC_KEY, now) {
+            Ok(end) => return Ok(Some(end)),
+            // A license that needs renewing matters more than a trial that ended before it.
+            Err(e) if !matches!(license, Some(Err(_))) => return Err(e),
+            Err(_) => {}
+        }
     }
     match license {
         Some(Err(e)) => Err(e),
@@ -205,12 +229,21 @@ fn machine_id() -> Option<String> {
         .find_map(|p| std::fs::read_to_string(p).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()))
 }
 
-fn verify(certificate: &str, device: &str, public_key: &[u8; 32]) -> Result<(), String> {
+/// A license certificate for this machine: until when it lets the app open.
+fn verify(certificate: &str, device: &str, public_key: &[u8; 32], now: u64) -> Result<u64, String> {
     let json = signed_json(certificate, public_key).ok_or("Die gespeicherte Lizenz ist ungültig. Bitte aktiviere sie im Kojalytics Launcher neu.")?;
     if json["device"].as_str() != Some(device) {
         return Err("Die Lizenz wurde auf einem anderen Computer aktiviert.".into());
     }
-    Ok(())
+    // A clock set back by more than a day before the certificate was issued doesn't stretch it.
+    if json["issued"].as_u64().is_some_and(|issued| now + 86_400 < issued) {
+        return Err("Datum und Uhrzeit dieses Computers stimmen nicht. Bitte stelle sie richtig ein.".into());
+    }
+    let until = json["expires"].as_u64().unwrap_or(LEGACY_UNTIL);
+    if now >= until {
+        return Err(RENEW.into());
+    }
+    Ok(until)
 }
 
 /// A free trial's certificate: the end of the trial while it runs. Trial certificates name the
@@ -250,19 +283,45 @@ mod tests {
         format!("{payload}.{}", URL_SAFE_NO_PAD.encode(signer.sign(payload.as_bytes()).to_bytes()))
     }
 
+    /// A moment after [`certificate`] was issued, before [`LEGACY_UNTIL`].
+    const NOW: u64 = 1792000100;
+
     #[test]
     fn accepts_only_a_kojalytics_certificate_for_this_device() {
         let signer = SigningKey::from_bytes(&[7; 32]);
         let public = signer.verifying_key().to_bytes();
-        assert!(verify(&certificate(&signer, "dev1"), "dev1", &public).is_ok());
-        assert!(verify(&certificate(&signer, "dev1"), "dev2", &public).is_err());
-        assert!(verify(&certificate(&SigningKey::from_bytes(&[8; 32]), "dev1"), "dev1", &public).is_err());
-        assert!(verify("garbage", "dev1", &public).is_err());
+        assert!(verify(&certificate(&signer, "dev1"), "dev1", &public, NOW).is_ok());
+        assert!(verify(&certificate(&signer, "dev1"), "dev2", &public, NOW).is_err());
+        assert!(verify(&certificate(&SigningKey::from_bytes(&[8; 32]), "dev1"), "dev1", &public, NOW).is_err());
+        assert!(verify("garbage", "dev1", &public, NOW).is_err());
     }
 
     fn signed(signer: &SigningKey, json: &str) -> String {
         let payload = URL_SAFE_NO_PAD.encode(json);
         format!("{payload}.{}", URL_SAFE_NO_PAD.encode(signer.sign(payload.as_bytes()).to_bytes()))
+    }
+
+    #[test]
+    fn a_license_certificate_unlocks_until_it_runs_out() {
+        let signer = SigningKey::from_bytes(&[7; 32]);
+        let public = signer.verifying_key().to_bytes();
+        let cert = signed(&signer, r#"{"v":1,"license":"abc","hint":"STVWX","device":"dev1","issued":1800000000,"expires":1802592000}"#);
+        assert_eq!(verify(&cert, "dev1", &public, 1800000000), Ok(1802592000));
+        assert_eq!(verify(&cert, "dev1", &public, 1802591999), Ok(1802592000));
+        assert_eq!(verify(&cert, "dev1", &public, 1802592000), Err(RENEW.to_string()));
+        // A clock set back to long before it was issued doesn't keep it going.
+        assert!(verify(&cert, "dev1", &public, 1800000000 - 2 * 86_400).is_err_and(|e| e != RENEW));
+        assert!(verify(&cert, "dev2", &public, 1800000000).is_err());
+    }
+
+    #[test]
+    fn a_certificate_from_before_renewals_unlocks_until_the_cutoff() {
+        let signer = SigningKey::from_bytes(&[7; 32]);
+        let public = signer.verifying_key().to_bytes();
+        let legacy = certificate(&signer, "dev1");
+        assert_eq!(verify(&legacy, "dev1", &public, NOW), Ok(LEGACY_UNTIL));
+        assert_eq!(verify(&legacy, "dev1", &public, LEGACY_UNTIL - 1), Ok(LEGACY_UNTIL));
+        assert_eq!(verify(&legacy, "dev1", &public, LEGACY_UNTIL), Err(RENEW.to_string()));
     }
 
     #[test]
@@ -275,14 +334,14 @@ mod tests {
         assert!(verify_trial(&trial, "dev2", &public, 1000100).is_err());
         assert!(verify_trial(&trial, "dev1", &public, 1000000 - 2 * 86_400).is_err());
         assert!(verify_trial(&signed(&SigningKey::from_bytes(&[8; 32]), r#"{"trial_device":"dev1","starts":1,"expires":9999999999}"#), "dev1", &public, 2).is_err());
-        assert!(verify(&trial, "dev1", &public).is_err());
+        assert!(verify(&trial, "dev1", &public, 1000100).is_err());
         assert!(verify_trial(&certificate(&signer, "dev1"), "dev1", &public, 1000100).is_err());
     }
 
     #[test]
     #[ignore = "needs a license activated by the Kojalytics Launcher on this machine"]
     fn this_machine_is_licensed() {
-        assert_eq!(check(), Ok(None));
+        assert!(check().is_ok_and(|until| until.is_some_and(|u| u > unix_now())));
     }
 
     #[test]
